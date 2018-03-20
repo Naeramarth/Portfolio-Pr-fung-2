@@ -1,0 +1,117 @@
+package dhbw;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import dhbw.pojo.detail.album.DetailsAlbum;
+import dhbw.pojo.detail.artist.DetailsArtist;
+import dhbw.pojo.detail.track.DetailsTrack;
+import dhbw.pojo.result.detail.DetailResult;
+import dhbw.pojo.result.search.SearchResult;
+import dhbw.pojo.result.search.SearchResultList;
+import dhbw.pojo.search.album.Artist;
+import dhbw.pojo.search.album.SearchAlbum;
+import dhbw.pojo.search.artist.SearchArtist;
+import dhbw.pojo.search.track.SearchTrack;
+import dhbw.spotify.RequestCategory;
+import dhbw.spotify.RequestType;
+import dhbw.spotify.SpotifyRequest;
+
+@RestController
+public class Controller {
+
+	@GetMapping("/search")
+	public SearchResult search(@RequestParam RequestCategory type, @RequestParam String query) {
+		SearchResult result = new SearchResult();
+		List<SearchResultList> list = new ArrayList<>();
+		result.setResults(list);
+		SpotifyRequest sr = new SpotifyRequest(RequestType.SEARCH);
+		try {
+			Optional<String> o = sr.performeRequestSearch(type, query);
+			if (o.isPresent()) {
+				String json = o.get();
+				ObjectMapper om = new ObjectMapper();
+				switch (type) {
+				case ALBUM:
+					SearchAlbum sal = om.readValue(json, SearchAlbum.class);
+					sal.getAlbums().getItems().forEach(i -> {
+						String artists = "";
+						for (Artist a : i.getArtists())
+							artists += ", " + a.getName();
+						if (artists.length() > 2)
+							artists = artists.substring(2);
+						list.add(new SearchResultList(i.getId(), i.getName(), artists, i.getUri()));
+					});
+					break;
+				case ARTIST:
+					SearchArtist sar = om.readValue(json, SearchArtist.class);
+					sar.getArtists().getItems().forEach(i -> {
+						String genres = "";
+						for (Object g : i.getGenres())
+							genres += ", " + g.toString();
+						if (genres.length() > 2)
+							genres = genres.substring(2);
+						list.add(new SearchResultList(i.getId(), i.getName(), genres, i.getUri()));
+					});
+					break;
+				case TRACK:
+					SearchTrack str = om.readValue(json, SearchTrack.class);
+					str.getTracks().getItems().forEach(i -> {
+						list.add(new SearchResultList(i.getId(), i.getName(), i.getAlbum().getName(), i.getUri()));
+					});
+					break;
+				}
+				result.setResults(list);
+			}
+		} catch (Exception e) {
+			e.printStackTrace(System.out);
+		}
+		return result;
+	}
+
+	@GetMapping("/detail/{id}")
+	public DetailResult detail(@RequestParam RequestCategory type, @PathVariable String id) {
+		SpotifyRequest sr = new SpotifyRequest(RequestType.DETAIL);
+		try {
+			Optional<String> o = sr.performeRequestDetail(type, id);
+			if (o.isPresent()) {
+				String json = o.get();
+				ObjectMapper om = new ObjectMapper();
+				switch (type) {
+				case ALBUM:
+					DetailsAlbum dal = om.readValue(json, DetailsAlbum.class);
+					return new DetailResult(dal.getName(), "Release Date: " + dal.getReleaseDate());
+				case ARTIST:
+					DetailsArtist dar = om.readValue(json, DetailsArtist.class);
+					String genres = "";
+					for (String s : dar.getGenres())
+						genres += ", " + s;
+					if (genres.length() > 2)
+						genres.substring(2);
+					return new DetailResult(dar.getName(),
+							"Genres: " + genres + "\nPopularity: " + dar.getPopularity() + "%");
+				case TRACK:
+					DetailsTrack dtr = om.readValue(json, DetailsTrack.class);
+					String artists = "";
+					for (dhbw.pojo.detail.track.Artist a : dtr.getArtists())
+						artists += ", " + a.getName();
+					if (artists.length() > 2)
+						artists = artists.substring(2);
+					return new DetailResult(dtr.getName(),
+							"Artist: " + artists + "\nAlbum: " + dtr.getAlbum().getName());
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return new DetailResult();
+	}
+}
